@@ -45,7 +45,7 @@
   const rupees = n => '₹' + n.toLocaleString('en-IN');
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const waLink = text => 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent(text);
-  const pouchSrc = (id, size) => 'assets/img/pouch-' + id + '-' + size + '.webp?v=7cd654776a';
+  const pouchSrc = (id, size) => 'assets/img/pouch-' + id + '-' + size + '.webp?v=90e045e68a';
 
   /* ---------------- toast ---------------- */
   const toastEl = document.createElement('div');
@@ -113,7 +113,7 @@
       <div class="p-body" id="pBody">
         <section id="vBag">
           <div class="empty" id="dEmpty" hidden>
-            <img src="assets/img/prop-pearls.webp?v=7cd654776a" alt="" width="120" height="97">
+            <img src="assets/img/prop-pearls.webp?v=90e045e68a" alt="" width="120" height="97">
             <p>Your bag is empty.</p>
             <a class="btn btn-dark" href="shop.html" ${onShop ? 'data-close' : ''}>Shop the flavours</a>
           </div>
@@ -557,45 +557,59 @@
     const hero = $('.hero'), line = hero && $('.lineup', hero), cv = hero && $('canvas.pile', hero);
     if (!cv || !line) return;
     const ctx = cv.getContext('2d');
-    let W = 0, H = 0, floor = 0, items = [], boxes = [], raf = 0, calm = 0, visible = true, last = 0;
+    let W = 0, H = 0, floor = 0, ceil = 0, items = [], boxes = [], raf = 0, calm = 0, visible = true, last = 0;
+    const TOP = hero.dataset.pile === 'top', Y = y => TOP ? H - y : y;   // TOP: simulate upside-down, draw mirrored
     const BITS = ['#c8641e', '#8A4A1F', '#E39A2B', '#a5501c'];
     function measure() {
       const hr = hero.getBoundingClientRect(), lr = line.getBoundingClientRect();
       W = hr.width; H = hr.height;
       cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      floor = lr.bottom - hr.top - lr.height * .02;
-      // the makhana stay in two lanes either side of the pouches, never on them
-      const packs = $$('.lu', line).map(a => a.getBoundingClientRect());
-      const left = Math.min(...packs.map(b => b.left)) - hr.left + 6, right = Math.max(...packs.map(b => b.right)) - hr.left - 6;
-      const minLane = Math.min(110, W * .2);
-      boxes = [[0, Math.max(left, minLane)], [Math.min(right, W - minLane), W]];
+      floor = TOP ? H - 12 : H - 10;
+      ceil = TOP ? 0 : lr.bottom - hr.top + 8;   // the makhana bounce no higher than the bottom of the pouches
+      // the makhana live in two lanes at the outer edges, with a clear gap from the pouches
+      const packs = TOP ? $$('.lu', line).map(a => a.getBoundingClientRect()) : [];
+      const small = W < 560, gap = small ? 10 : 26, edge = small ? 6 : 16;
+      {   // the lanes clear the logo and the text as well as the pouches
+        const ext = el => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect(); };
+        $$('.hero-mark img, .ctas > *', hero).forEach(e => packs.push(e.getBoundingClientRect()));
+        $$(W < 560 ? '.hero-tag' : '.hero-tag, .hero .lead', hero).forEach(e => packs.push(ext(e)));
+      }
+      const left = Math.min(...packs.map(b => b.left)) - hr.left, right = Math.max(...packs.map(b => b.right)) - hr.left;
+      boxes = [[edge, left - gap], [right + gap, W - edge]];
     }
     function spawn() {
       items = [];
-      const R = rng(42), small = W < 560, per = small ? 6 : 11;
+      const R = rng(42), small = W < 560;
       [0, 1].forEach(side => {
-        const [lo, hi] = boxes[side];
+        const [lo, hi] = boxes[side], lane = hi - lo;
+        if (lane < 18) return;                       // no room on this side: leave it empty
+        const rMax = Math.min(small ? 17 : 23, lane / 2.2), rMin = Math.min(small ? 11 : 14, rMax * .7);
+        const per = Math.min(small ? 6 : 11, Math.max(3, Math.floor(lane / (rMax * 1.6)) * 3));
         for (let i = 0; i < per; i++) {
-          const r = small ? 11 + R() * 6 : 14 + R() * 9;
-          const x = lo + r + R() * Math.max(1, hi - lo - 2 * r);
+          const r = rMin + R() * (rMax - rMin);
+          const x = lo + r + R() * Math.max(1, lane - 2 * r);
           items.push({ side, x, y: -r - i * 60 - R() * 50 - side * 30, vx: 0, vy: 0, r, a: R() * 6.28, va: (R() - .5) * 1.5, m: r * r, s: pearlSprite(r, i * 17 + side * 101 + 3) });
         }
         for (let i = 0; i < per * 1.4; i++) {
           const r = 2.6 + R() * 2.6;
-          const x = lo + r + R() * Math.max(1, hi - lo - 2 * r);
+          const x = lo + r + R() * Math.max(1, lane - 2 * r);
           items.push({ side, x, y: -r - i * 40 - R() * 80, vx: 0, vy: 0, r, a: R() * 6.28, va: (R() - .5) * 2, m: r * r, bit: true, col: BITS[i % 4] });
         }
       });
+    }
+    function keepIn(p) {
+      const [lo, hi] = boxes[p.side];
+      if (p.x < lo + p.r) { p.x = lo + p.r; p.vx = Math.abs(p.vx) * .2; }
+      if (p.x > hi - p.r) { p.x = hi - p.r; p.vx = -Math.abs(p.vx) * .2; }
+      if (p.y > floor - p.r) p.y = floor - p.r;
     }
     function step(dt) {
       for (const p of items) {
         p.vy += 1900 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
         let ground = false;
         if (p.y > floor - p.r) { p.y = floor - p.r; if (p.vy > 0) p.vy *= -.16; p.vx *= .82; ground = true; }
-        if (p.y < p.r && p.vy < 0) { p.y = p.r; p.vy *= -.3; }
-        const [lo, hi] = boxes[p.side];
-        if (p.x < lo + p.r) { p.x = lo + p.r; p.vx = Math.abs(p.vx) * .2; }
-        if (p.x > hi - p.r) { p.x = hi - p.r; p.vx = -Math.abs(p.vx) * .2; }
+        if (p.y < ceil + p.r && p.vy < 0) { p.y = ceil + p.r; p.vy *= -.3; }
+        keepIn(p);
         p.vx *= ground ? .6 : .9;  // keep the motion vertical
         const target = p.bit ? p.va : p.vx / p.r;
         p.va += (target - p.va) * (ground ? .5 : .08);
@@ -615,18 +629,19 @@
           if (rv < 0) { const imp = -1.2 * rv / (1 / A.m + 1 / B.m); A.vx -= imp / A.m * nx; A.vy -= imp / A.m * ny; B.vx += imp / B.m * nx; B.vy += imp / B.m * ny; A.vx *= .5; B.vx *= .5; A.va *= .9; B.va *= .9; }
         }
       }
+      for (const p of items) keepIn(p);  // collisions never push a pearl out of its lane
     }
     function draw() {
       ctx.clearRect(0, 0, W, H);
-      for (const p of items) if (!p.bit && p.y > floor - p.r * 1.6) {
+      if (!TOP) for (const p of items) if (!p.bit && p.y > floor - p.r * 1.6) {
         const g = ctx.createRadialGradient(p.x, floor + 2, 0, p.x, floor + 2, p.r * 1.1); g.addColorStop(0, 'rgba(0,0,0,.3)'); g.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(p.x, floor + 2, p.r * 1.1, p.r * .4, 0, 0, Math.PI * 2); ctx.fill();
       }
       for (const p of items) if (p.bit) {
-        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.fillStyle = p.col; const s = p.r * 1.7;
+        ctx.save(); ctx.translate(p.x, Y(p.y)); ctx.rotate(p.a); ctx.fillStyle = p.col; const s = p.r * 1.7;
         ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-s / 2, -s / 2, s, s * .8, s * .3); else ctx.rect(-s / 2, -s / 2, s, s * .8); ctx.fill(); ctx.restore();
       }
-      for (const p of items) if (!p.bit) { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.drawImage(p.s.c, -p.s.size / 2, -p.s.size / 2, p.s.size, p.s.size); ctx.restore(); }
+      for (const p of items) if (!p.bit) { ctx.save(); ctx.translate(p.x, Y(p.y)); ctx.rotate(p.a); ctx.drawImage(p.s.c, -p.s.size / 2, -p.s.size / 2, p.s.size, p.s.size); ctx.restore(); }
     }
     function loop(t) {
       raf = 0;
@@ -638,7 +653,8 @@
     }
     function wake() { calm = 0; if (!raf && visible && !reduce) raf = requestAnimationFrame(loop); }
     function nudge(px, py, s) {
-      const top = Math.sqrt(2 * 1900 * Math.max(200, floor - 40)); // speed that just reaches the top of the hero
+      py = Y(py);
+      const top = Math.sqrt(2 * 1900 * Math.max(160, (TOP ? .62 : 1) * floor - ceil - 30)); // speed that just reaches the far side of the hero
       for (const p of items) { const dx = p.x - px, dy = p.y - py, d = Math.hypot(dx, dy) || 1, R = s > 1 ? 140 : 100; if (d < R) { const f = Math.min(1, (1 - d / R) * s); p.vy = -Math.max(-p.vy, top * (.45 + .55 * f) * (.85 + Math.random() * .15)); p.va += (Math.random() - .5) * 3; } }
       wake();
     }
@@ -651,7 +667,7 @@
       if (reduce) { for (let i = 0; i < 1200; i++) step(1 / 120); draw(); } else wake();
       started = true;
     }
-    new ResizeObserver(() => { if (!started) return; clearTimeout(rt); rt = setTimeout(() => { measure(); for (const p of items) { const [lo, hi] = boxes[p.side]; p.x = Math.max(lo + p.r, Math.min(p.x, hi - p.r)); } wake(); }, 150); }).observe(hero);
+    new ResizeObserver(() => { if (!started) return; clearTimeout(rt); rt = setTimeout(() => { const w0 = W; measure(); if (Math.abs(W - w0) > 40) spawn(); else for (const p of items) keepIn(p); wake(); }, 150); }).observe(hero);
     const hint = $('.stage-hint'); if (hint) { hint.textContent = matchMedia('(hover: hover)').matches ? 'give the makhana a nudge' : 'tap the makhana'; hint.hidden = reduce; }
     // wait for the pouch images (and their pop-up animation) so the pouches are in place
     Promise.all($$('img', line).map(i => i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r; }))).then(() => setTimeout(start, reduce ? 0 : 900));
