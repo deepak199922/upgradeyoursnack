@@ -1,4 +1,4 @@
-/* MAK CO. site script: bag, checkout, nav and motion. Plain JS, no build step. */
+/* behtr site script: bag, checkout, nav and motion. Plain JS, no build step. */
 (() => {
   'use strict';
 
@@ -10,9 +10,14 @@
     instagram: '',                        // e.g. 'https://instagram.com/makco' (empty = "coming soon")
     facebook: '',                         // e.g. 'https://facebook.com/makco'
     sizes: { 10: { label: '10 g', price: 30 }, 25: { label: '25 g', price: 60 } },
-    // Google Apps Script web app (the "MAK CO Orders" sheet). Orders placed here land in the
+    // Google Apps Script web app (the "Makco Orders" sheet). Orders placed here land in the
     // Orders sheet and trigger the Telegram + email alerts. Empty = WhatsApp checkout only.
     orderApi: 'https://script.google.com/macros/s/AKfycbyA8hbaWMb7qlF0aovpRoJSSTWficCCFvP5oIFJr3Y_2ELtepFfOK0nmz6lxrakrYbw/exec',
+    // Used until the order system answers (it sends the live values)
+    upiId: 'deepakgupta221999-1@okhdfcbank',
+    payee: 'Deepak Gupta',
+    allowCod: true,
+    paymentNotice: 'Our business registration is in progress, so for now please pay by UPI to the ID below, or choose to pay on delivery (cash or UPI).',
     // Menu-sheet IDs for each flavour and pack size
     sku: {
       'pani-puri':    { 25: 'PANI',    10: 'PANI10' },
@@ -164,6 +169,7 @@
             </div>
             <p class="form-err" id="pErr" role="alert" hidden></p>
             <button class="btn btn-gold btn-block" type="button" id="pPlace">I've paid, place my order</button>
+            <p class="help-note" id="pWaWrap" hidden>Our order system isn't reachable right now. <a id="pWa" href="#" target="_blank" rel="noopener">Send this order on WhatsApp instead</a>.</p>
             <p class="help-note">We check every payment and confirm on WhatsApp or email.</p>
           </div>
         </section>
@@ -205,7 +211,7 @@
     drawer.classList.remove('open'); document.body.style.overflow = '';
     setTimeout(() => { drawer.hidden = true; renderBar(); if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true }); }, reduce ? 0 : 450);
   }
-  $$('.bag-btn').forEach(b => b.addEventListener('click', () => openDrawer('bag')));
+  $$('.bag-btn').forEach(b => b.addEventListener('click', () => { openDrawer('bag'); loadServer(); }));
   $('#bbOpen').addEventListener('click', () => openDrawer('bag'));
   drawer.addEventListener('click', e => { if (e.target.closest('[data-close]')) closeDrawer(); });
   $('#dBack').addEventListener('click', () => setView(view === 'pay' ? 'checkout' : 'bag'));
@@ -283,16 +289,27 @@
     return data;
   }
   let serverLoading = null;
-  function loadServer() {
-    if (server || serverLoading || !CONFIG.orderApi) return serverLoading;
+  function applyServer(d) {
+    server = d; server.menuById = Object.fromEntries((d.menu || []).map(m => [m.id, m]));
+    if (d.slots && d.slots.length) renderSlots(d.slots);
+    listeners.forEach(fn => fn());
+  }
+  try { // reuse a recent answer so pages open with live prices straight away
+    const c = JSON.parse(sessionStorage.getItem('behtr-config') || 'null');
+    if (c && Date.now() - c.at < 10 * 60 * 1000) applyServer(c.d);
+  } catch (e) {}
+  function loadServer(force) {
+    if ((server && !force) || serverLoading || !CONFIG.orderApi) return serverLoading;
     serverLoading = api('config').then(d => {
-      server = d; server.menuById = Object.fromEntries((d.menu || []).map(m => [m.id, m]));
-      if (d.slots && d.slots.length) renderSlots(d.slots);
-      listeners.forEach(fn => fn());
+      applyServer(d);
+      try { sessionStorage.setItem('behtr-config', JSON.stringify({ at: Date.now(), d })); } catch (e) {}
       return d;
     }).catch(() => null).finally(() => { serverLoading = null; });
     return serverLoading;
   }
+  // Warm up the order system in the background, so it is awake by the time someone checks out
+  const idle = window.requestIdleCallback || (fn => setTimeout(fn, 1200));
+  idle(() => loadServer(!!server));
 
   const val = id => $('#' + id).value.trim();
   const cleanPhone = v => v.replace(/[\s\-()]/g, '').replace(/^(\+?91)(?=\d{10}$)/, '').replace(/^0(?=\d{10}$)/, '');
@@ -320,7 +337,7 @@
   }
   function orderText() {
     const n = count();
-    return ["Hi MAK CO! I'd like to order:",
+    return ["Hi behtr! I'd like to order:",
       ...lines().map(l => '• ' + l.f.name + ', ' + CONFIG.sizes[l.size].label + ' × ' + l.qty + ' = ' + rupees(l.qty * l.price)),
       'Total: ' + rupees(total()) + ' (' + n + (n === 1 ? ' pack)' : ' packs)'), '',
       'Name: ' + val('cName'), 'Phone: ' + cleanPhone(val('cPhone')),
@@ -330,44 +347,40 @@
   }
   function updateSend() { $('#cWa').href = count() ? waLink(orderText()) : '#'; }
   const newToken = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
-  let checkoutToken = newToken(), quote = null;
+  let checkoutToken = newToken();
   function busy(btn, on, label) { btn.disabled = on; btn.setAttribute('aria-busy', on ? 'true' : 'false'); if (label) btn.textContent = label; }
   function showErr(el, msg) { el.textContent = msg || ''; el.hidden = !msg; }
 
   $('#cForm').addEventListener('input', e => { updateSend(); const f = e.target.closest('.field'); if (f && f.classList.contains('bad')) validate(true); });
   $('#cForm').addEventListener('change', updateSend);
-  $('#cForm').addEventListener('submit', async e => {
+  $('#cForm').addEventListener('submit', e => {
     e.preventDefault();
     showErr($('#cErr'), ''); $('#cFallback').hidden = true;
     if (!count()) return;
     if (!validate(true)) { const b = $('.field.bad input, .field.bad textarea', drawer); if (b) b.focus(); return; }
-    const btn = $('#cNext');
-    busy(btn, true, 'Checking your order…');
-    try {
-      await loadServer();
-      quote = await api('quote', { order: orderPayload() });
-      renderPay();
-      setView('pay');
-    } catch (err) {
-      if (err.offline) { updateSend(); $('#cFallback').hidden = false; showErr($('#cErr'), "We couldn't reach our order system."); }
-      else showErr($('#cErr'), err.message);
-    } finally { busy(btn, false, 'Continue to payment'); }
+    renderPay();
+    setView('pay');
+    loadServer(); // make sure the order system is awake for "Place order"
   });
 
   function renderPay() {
+    const pay = server || {};
+    const upiId = pay.upiId || CONFIG.upiId, payee = pay.payee || CONFIG.payee;
+    const allowCod = pay.allowCod !== undefined ? pay.allowCod : CONFIG.allowCod;
+    const notice = pay.paymentNotice || CONFIG.paymentNotice;
     $('#pItems').innerHTML = lines().map(l => `<li><span>${l.qty} × ${esc(l.f.name)} <small>${CONFIG.sizes[l.size].label}</small></span><span>${rupees(l.qty * l.price)}</span></li>`).join('');
-    $('#pSlot').textContent = quote.slot;
-    $('#pTotal').textContent = rupees(quote.total);
-    $('#pAmt').textContent = rupees(quote.total);
-    $('#pUpiId').textContent = quote.upiId;
-    $('#pPayee').textContent = quote.payee ? 'Name shown in your app: ' + quote.payee : '';
-    $('#pNote').textContent = quote.payNote;
-    $('#pNotice').textContent = (server && server.paymentNotice) || '';
-    $('#pNotice').hidden = !(server && server.paymentNotice);
-    $('#pmCodWrap').hidden = quote.allowCod === false;
-    if (quote.allowCod === false) $('#pmUpi').checked = true;
+    $('#pSlot').textContent = slotVal();
+    $('#pTotal').textContent = rupees(total());
+    $('#pAmt').textContent = rupees(total());
+    $('#pUpiId').textContent = upiId;
+    $('#pPayee').textContent = payee ? 'Name shown in your app: ' + payee : '';
+    $('#pNote').textContent = ('BEHTR ' + val('cFlat') + ' ' + val('cArea')).replace(/\s+/g, ' ').trim().slice(0, 40);
+    $('#pNotice').textContent = notice || '';
+    $('#pNotice').hidden = !notice;
+    $('#pmCodWrap').hidden = allowCod === false;
+    if (allowCod === false) $('#pmUpi').checked = true;
     syncPayMode();
-    showErr($('#pErr'), '');
+    showErr($('#pErr'), ''); $('#pWaWrap').hidden = true;
   }
   function syncPayMode() {
     const cod = $('#pmCod').checked;
@@ -384,6 +397,7 @@
     const btn = $('#pPlace');
     showErr($('#pErr'), '');
     busy(btn, true, 'Placing your order…');
+    const slow = setTimeout(() => { if (btn.disabled) btn.textContent = 'Almost done, saving your order…'; }, 3500);
     try {
       const r = await api('place', { order: orderPayload(mode) });
       const phone = cleanPhone(val('cPhone'));
@@ -393,13 +407,14 @@
         ? `Please keep ${rupees(r.total)} ready on ${r.slot}. We'll confirm on WhatsApp${val('cEmail') ? ' and email' : ''}.`
         : `We'll check your ${rupees(r.total)} payment and confirm your delivery on ${r.slot}.`;
       $('#dTrack').href = r.trackUrl;
-      $('#dWa').href = waLink('Hi MAK CO! About my order ' + r.orderId + ': ');
+      $('#dWa').href = waLink('Hi behtr! About my order ' + r.orderId + ': ');
       bag = {}; saveBag(); listeners.forEach(fn => fn());
       checkoutToken = newToken();
       setView('done');
     } catch (err) {
-      showErr($('#pErr'), err.offline ? "We couldn't reach our order system. Check your connection and try again, or send the order on WhatsApp from the previous step." : err.message);
-    } finally { busy(btn, false); syncPayMode(); }
+      showErr($('#pErr'), err.offline ? "We couldn't reach our order system. Check your connection and try again." : err.message);
+      if (err.offline) { updateSend(); $('#pWa').href = $('#cWa').href; $('#pWaWrap').hidden = false; }
+    } finally { clearTimeout(slow); busy(btn, false); syncPayMode(); }
   });
   $('#cNew').addEventListener('click', () => { setView('bag'); closeDrawer(); if (!onShop) location.href = 'shop.html'; });
 
@@ -423,9 +438,9 @@
   /* ---------------- WhatsApp + social + copy ---------------- */
   const WA_TEXT = {
     hello: 'Hi Deepak and Samiksha! ',
-    bulk: "Hi MAK CO! I'd like to plan a bulk order.\nOccasion:\nDate:\nHow many people or packs:\nFlavours:\nPack size:",
-    custom: "Hi MAK CO! I'd like a custom pack size.\nFlavour:\nSize:\nHow many:",
-    question: 'Hi MAK CO! I have a question: '
+    bulk: "Hi behtr! I'd like to plan a bulk order.\nOccasion:\nDate:\nHow many people or packs:\nFlavours:\nPack size:",
+    custom: "Hi behtr! I'd like a custom pack size.\nFlavour:\nSize:\nHow many:",
+    question: 'Hi behtr! I have a question: '
   };
   $$('[data-wa]').forEach(a => { a.href = waLink(WA_TEXT[a.dataset.wa] || WA_TEXT.hello); a.target = '_blank'; a.rel = 'noopener'; });
   $$('[data-social]').forEach(a => {
@@ -478,6 +493,8 @@
   });
 
   /* ---------------- flavour showcase ---------------- */
+  // fetch every showcase image up front, so a flavour never appears half-loaded
+  if ($('.showcase')) idle(() => $$('.showcase img').forEach(im => { if (!im.complete) { const x = new Image(); x.decoding = 'async'; x.src = im.currentSrc || im.src; } }));
   const sc = $('.showcase');
   if (sc) {
     const chaps = $$('.chap', sc), n = chaps.length;
@@ -495,7 +512,7 @@
         const p = Math.max(0, Math.min(.9999, -r.top / span));
         const i = Math.floor(p * n), lp = p * n - i;
         if (i !== cur) {
-          cur = i; chaps.forEach((c, k) => c.classList.toggle('on', k === i)); setTint(i);
+          cur = i; chaps.forEach((c, k) => { c.classList.toggle('on', k === i); c.classList.toggle('before', k < i); }); setTint(i);
           dbs.forEach((b, k) => b.setAttribute('aria-current', k === i ? 'true' : 'false'));
         }
         $$('.prop', chaps[i]).forEach(pr => {
@@ -537,47 +554,49 @@
     const out = { c, size }; spriteCache.set(key, out); return out;
   }
   function heroPile() {
-    const stage = $('.stage'), cv = stage && $('canvas', stage), line = stage && $('.lineup', stage);
-    if (!cv) return;
+    const hero = $('.hero'), line = hero && $('.lineup', hero), cv = hero && $('canvas.pile', hero);
+    if (!cv || !line) return;
     const ctx = cv.getContext('2d');
-    let W = 0, H = 0, floor = 0, items = [], raf = 0, calm = 0, visible = true, last = 0, bins = [];
+    let W = 0, H = 0, floor = 0, items = [], boxes = [], raf = 0, calm = 0, visible = true, last = 0;
     const BITS = ['#c8641e', '#8A4A1F', '#E39A2B', '#a5501c'];
+    function measure() {
+      const hr = hero.getBoundingClientRect(), lr = line.getBoundingClientRect();
+      W = hr.width; H = hr.height;
+      cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      floor = lr.bottom - hr.top - lr.height * .02;
+      // the makhana stay in two lanes either side of the pouches, never on them
+      const packs = $$('.lu', line).map(a => a.getBoundingClientRect());
+      const left = Math.min(...packs.map(b => b.left)) - hr.left + 6, right = Math.max(...packs.map(b => b.right)) - hr.left - 6;
+      const minLane = Math.min(110, W * .2);
+      boxes = [[0, Math.max(left, minLane)], [Math.min(right, W - minLane), W]];
+    }
     function spawn() {
       items = [];
-      const R = rng(42), small = W < 560;
-      const lr = line.getBoundingClientRect(), sr = stage.getBoundingClientRect();
-      const inL = lr.left - sr.left, inR = lr.right - sr.left;
-      const zone = Math.max(70, Math.min(160, small ? W * .22 : inL + 40));
-      bins = [[0, Math.min(zone, W * .4)], [Math.max(W - zone, W * .6), W]];
-      const per = small ? 6 : 9;
-      bins.forEach(([lo, hi], side) => {
+      const R = rng(42), small = W < 560, per = small ? 6 : 11;
+      [0, 1].forEach(side => {
+        const [lo, hi] = boxes[side];
         for (let i = 0; i < per; i++) {
-          const r = small ? 11 + R() * 6 : 15 + R() * 9;
-          items.push({ side, x: lo + r + R() * (hi - lo - 2 * r), y: -r - i * 50 - R() * 40 - side * 25, vx: (R() - .5) * 14, vy: 0, r, a: R() * 6.28, va: 0, m: r * r, s: pearlSprite(r, i * 17 + side * 101 + 3) });
+          const r = small ? 11 + R() * 6 : 14 + R() * 9;
+          const x = lo + r + R() * Math.max(1, hi - lo - 2 * r);
+          items.push({ side, x, y: -r - i * 60 - R() * 50 - side * 30, vx: 0, vy: 0, r, a: R() * 6.28, va: (R() - .5) * 1.5, m: r * r, s: pearlSprite(r, i * 17 + side * 101 + 3) });
         }
-        for (let i = 0; i < per * 1.5; i++) {
+        for (let i = 0; i < per * 1.4; i++) {
           const r = 2.6 + R() * 2.6;
-          items.push({ side, x: lo + r + R() * (hi - lo - 2 * r), y: -r - i * 32 - R() * 60, vx: (R() - .5) * 20, vy: 0, r, a: R() * 6.28, va: (R() - .5) * 2, m: r * r, bit: true, col: BITS[i % 4] });
+          const x = lo + r + R() * Math.max(1, hi - lo - 2 * r);
+          items.push({ side, x, y: -r - i * 40 - R() * 80, vx: 0, vy: 0, r, a: R() * 6.28, va: (R() - .5) * 2, m: r * r, bit: true, col: BITS[i % 4] });
         }
       });
-    }
-    function resize() {
-      const rect = stage.getBoundingClientRect();
-      W = rect.width; H = rect.height;
-      cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-      floor = H - parseFloat(getComputedStyle(line).bottom) + 6;
-      spawn();
-      if (reduce) { for (let i = 0; i < 1000; i++) step(1 / 120); draw(); } else wake();
     }
     function step(dt) {
       for (const p of items) {
         p.vy += 1900 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
         let ground = false;
-        if (p.y > floor - p.r) { p.y = floor - p.r; if (p.vy > 0) p.vy *= -.16; p.vx *= .8; ground = true; }
-        const [lo, hi] = bins[p.side];
-        if (p.x < lo + p.r) { p.x = lo + p.r; p.vx = Math.abs(p.vx) * .35; }
-        if (p.x > hi - p.r) { p.x = hi - p.r; p.vx = -Math.abs(p.vx) * .35; }
-        // rolling: spin follows horizontal speed, and always settles (no runaway spin)
+        if (p.y > floor - p.r) { p.y = floor - p.r; if (p.vy > 0) p.vy *= -.16; p.vx *= .82; ground = true; }
+        if (p.y < p.r && p.vy < 0) { p.y = p.r; p.vy *= -.3; }
+        const [lo, hi] = boxes[p.side];
+        if (p.x < lo + p.r) { p.x = lo + p.r; p.vx = Math.abs(p.vx) * .2; }
+        if (p.x > hi - p.r) { p.x = hi - p.r; p.vx = -Math.abs(p.vx) * .2; }
+        p.vx *= ground ? .6 : .9;  // keep the motion vertical
         const target = p.bit ? p.va : p.vx / p.r;
         p.va += (target - p.va) * (ground ? .5 : .08);
         p.va *= ground ? .9 : .985;
@@ -593,7 +612,7 @@
           const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, ov = min - d, tm = A.m + B.m;
           A.x -= nx * ov * B.m / tm; A.y -= ny * ov * B.m / tm; B.x += nx * ov * A.m / tm; B.y += ny * ov * A.m / tm;
           const rv = (B.vx - A.vx) * nx + (B.vy - A.vy) * ny;
-          if (rv < 0) { const imp = -1.2 * rv / (1 / A.m + 1 / B.m); A.vx -= imp / A.m * nx; A.vy -= imp / A.m * ny; B.vx += imp / B.m * nx; B.vy += imp / B.m * ny; A.vx *= .93; B.vx *= .93; A.va *= .9; B.va *= .9; }
+          if (rv < 0) { const imp = -1.2 * rv / (1 / A.m + 1 / B.m); A.vx -= imp / A.m * nx; A.vy -= imp / A.m * ny; B.vx += imp / B.m * nx; B.vy += imp / B.m * ny; A.vx *= .5; B.vx *= .5; A.va *= .9; B.va *= .9; }
         }
       }
     }
@@ -619,16 +638,23 @@
     }
     function wake() { calm = 0; if (!raf && visible && !reduce) raf = requestAnimationFrame(loop); }
     function nudge(px, py, s) {
-      for (const p of items) { const dx = p.x - px, dy = p.y - py, d = Math.hypot(dx, dy) || 1, R = s > 1 ? 120 : 80; if (d < R) { const f = (1 - d / R) * s; p.vx += dx / d * 480 * f; p.vy -= (360 + Math.random() * 180) * f; } }
+      const top = Math.sqrt(2 * 1900 * Math.max(200, floor - 40)); // speed that just reaches the top of the hero
+      for (const p of items) { const dx = p.x - px, dy = p.y - py, d = Math.hypot(dx, dy) || 1, R = s > 1 ? 140 : 100; if (d < R) { const f = Math.min(1, (1 - d / R) * s); p.vy = -Math.max(-p.vy, top * (.45 + .55 * f) * (.85 + Math.random() * .15)); p.va += (Math.random() - .5) * 3; } }
       wake();
     }
-    stage.addEventListener('pointermove', e => { if (reduce || e.pointerType === 'touch') return; const r = stage.getBoundingClientRect(); nudge(e.clientX - r.left, e.clientY - r.top, .7); });
-    stage.addEventListener('pointerdown', e => { if (reduce) return; const r = stage.getBoundingClientRect(); nudge(e.clientX - r.left, e.clientY - r.top, 1.5); });
-    new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible) wake(); }).observe(stage);
-    let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(resize, 150); }).observe(stage);
+    hero.addEventListener('pointermove', e => { if (reduce || e.pointerType === 'touch') return; const r = hero.getBoundingClientRect(); nudge(e.clientX - r.left, e.clientY - r.top, .75); });
+    hero.addEventListener('pointerdown', e => { if (reduce) return; const r = hero.getBoundingClientRect(); nudge(e.clientX - r.left, e.clientY - r.top, 1.6); });
+    new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible) wake(); }).observe(hero);
+    let started = false, rt;
+    function start() {
+      measure(); spawn();
+      if (reduce) { for (let i = 0; i < 1200; i++) step(1 / 120); draw(); } else wake();
+      started = true;
+    }
+    new ResizeObserver(() => { if (!started) return; clearTimeout(rt); rt = setTimeout(() => { measure(); for (const p of items) { const [lo, hi] = boxes[p.side]; p.x = Math.max(lo + p.r, Math.min(p.x, hi - p.r)); } wake(); }, 150); }).observe(hero);
     const hint = $('.stage-hint'); if (hint) { hint.textContent = matchMedia('(hover: hover)').matches ? 'give the makhana a nudge' : 'tap the makhana'; hint.hidden = reduce; }
-    // wait for the lineup images so the floor sits under the pouches
-    Promise.all($$('img', line).map(i => i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r; }))).then(() => setTimeout(resize, reduce ? 0 : 500));
+    // wait for the pouch images (and their pop-up animation) so the pouches are in place
+    Promise.all($$('img', line).map(i => i.complete ? 0 : new Promise(r => { i.onload = i.onerror = r; }))).then(() => setTimeout(start, reduce ? 0 : 900));
   }
   heroPile();
 
@@ -645,6 +671,7 @@
         if (out && r.checked) { const other = $$('input[type="radio"]', card).find(x => !soldOut(id, x.value)); if (other) { other.checked = true; img.src = pouchSrc(id, other.value); } }
       });
       const s = size(), p = priceOf(id, s);
+      const hint = $('.seg-note', card); if (hint) hint.textContent = s === '10' ? 'A snack for one: lunch boxes, play breaks, chai time.' : 'To share or gift: return favours, puja favours, family snacking.';
       addBtn.disabled = soldOut(id, s);
       tile.dataset.size = s;
       addBtn.textContent = 'Add to bag · ' + rupees(p * q);
@@ -681,5 +708,4 @@
   listeners.push(() => { renderCount(false); renderBar(); if (!drawer.hidden) renderDrawer(); });
   renderCount(false); renderBar();
   if (location.hash === '#bag') openDrawer('bag');
-  if (onShop) loadServer();
 })();
