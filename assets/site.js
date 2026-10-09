@@ -45,7 +45,7 @@
   const rupees = n => '₹' + n.toLocaleString('en-IN');
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const waLink = text => 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent(text);
-  const pouchSrc = (id, size) => 'assets/img/pouch-' + id + '-' + size + '.webp';
+  const pouchSrc = (id, size) => 'assets/img/pouch-' + id + '-' + size + '.webp?v=7cd654776a';
 
   /* ---------------- toast ---------------- */
   const toastEl = document.createElement('div');
@@ -113,7 +113,7 @@
       <div class="p-body" id="pBody">
         <section id="vBag">
           <div class="empty" id="dEmpty" hidden>
-            <img src="assets/img/prop-pearls.webp" alt="" width="120" height="97">
+            <img src="assets/img/prop-pearls.webp?v=7cd654776a" alt="" width="120" height="97">
             <p>Your bag is empty.</p>
             <a class="btn btn-dark" href="shop.html" ${onShop ? 'data-close' : ''}>Shop the flavours</a>
           </div>
