@@ -6,8 +6,8 @@
   const CONFIG = {
     whatsapp: '917696458640',            // country code + number, no +
     whatsappLabel: '+91 76964 58640',
-    email: 'makco2201@gmail.com',
-    instagram: '',                        // e.g. 'https://instagram.com/makco' (empty = "coming soon")
+    email: 'upyoursnack@gmail.com',
+    instagram: 'https://www.instagram.com/behtr_/',
     facebook: '',                         // e.g. 'https://facebook.com/makco'
     sizes: { 10: { label: '10 g', price: 30 }, 25: { label: '25 g', price: 60 } },
     // Google Apps Script web app (the "Makco Orders" sheet). Orders placed here land in the
@@ -45,7 +45,7 @@
   const rupees = n => '₹' + n.toLocaleString('en-IN');
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const waLink = text => 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent(text);
-  const pouchSrc = (id, size) => 'assets/img/pouch-' + id + '-' + size + '.webp?v=707885dda2';
+  const pouchSrc = (id, size) => 'assets/img/pouch-' + id + '-' + size + '.webp?v=1ac60c4c91';
 
   /* ---------------- toast ---------------- */
   const toastEl = document.createElement('div');
@@ -113,7 +113,7 @@
       <div class="p-body" id="pBody">
         <section id="vBag">
           <div class="empty" id="dEmpty" hidden>
-            <img src="assets/img/prop-pearls.webp?v=707885dda2" alt="" width="120" height="97">
+            <img src="assets/img/prop-pearls.webp?v=1ac60c4c91" alt="" width="120" height="97">
             <p>Your bag is empty.</p>
             <a class="btn btn-dark" href="shop.html" ${onShop ? 'data-close' : ''}>Shop the flavours</a>
           </div>
@@ -158,7 +158,7 @@
             </div>
             <div class="paybox" id="pUpi">
               <div class="qr-card">
-                <img src="assets/img/upi-qr.webp?v=707885dda2" alt="UPI QR code for Deepak Gupta" width="480" height="480">
+                <img src="assets/img/upi-qr.webp?v=1ac60c4c91" alt="UPI QR code for Deepak Gupta" width="480" height="480">
                 <div><b>Scan to pay with any UPI app</b><small>GPay, PhonePe, Paytm, BHIM</small><span class="qr-tag">Personal QR · Deepak Gupta</span></div>
               </div>
               <p class="pay-note" id="pNotice"></p>
