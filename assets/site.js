@@ -12,12 +12,12 @@
     sizes: { 10: { label: '10 g', price: 30 }, 25: { label: '25 g', price: 60 } },
     // Google Apps Script web app (the "Makco Orders" sheet). Orders placed here land in the
     // Orders sheet and trigger the Telegram + email alerts. Empty = WhatsApp checkout only.
-    orderApi: 'https://script.google.com/macros/s/AKfycbyA8hbaWMb7qlF0aovpRoJSSTWficCCFvP5oIFJr3Y_2ELtepFfOK0nmz6lxrakrYbw/exec',
+    orderApi: 'https://script.google.com/macros/s/AKfycbzs33qWeLybSJYIZSFzBYCJ5qrBdgdugndeC4qlW-7cX6_y89sPbA2pc7r6I0M5CVawEg/exec',
     // Used until the order system answers (it sends the live values)
     upiId: 'deepakgupta221999-1@okhdfcbank',
     payee: 'Deepak Gupta',
     allowCod: true,
-    paymentNotice: 'Our business registration is in progress, so for now please pay by UPI to the ID below, or choose to pay on delivery (cash or UPI).',
+    paymentNotice: 'This is a personal UPI account (Deepak Gupta, our founder). Our business registration and current account are still being set up, so for now payments come to this account.',
     // Menu-sheet IDs for each flavour and pack size
     sku: {
       'pani-puri':    { 25: 'PANI',    10: 'PANI10' },
@@ -45,7 +45,7 @@
   const rupees = n => '₹' + n.toLocaleString('en-IN');
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const waLink = text => 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent(text);
-  const pouchSrc = (id, size) => 'assets/img/pouch-' + id + '-' + size + '.webp?v=90e045e68a';
+  const pouchSrc = (id, size) => 'assets/img/pouch-' + id + '-' + size + '.webp?v=707885dda2';
 
   /* ---------------- toast ---------------- */
   const toastEl = document.createElement('div');
@@ -113,7 +113,7 @@
       <div class="p-body" id="pBody">
         <section id="vBag">
           <div class="empty" id="dEmpty" hidden>
-            <img src="assets/img/prop-pearls.webp?v=90e045e68a" alt="" width="120" height="97">
+            <img src="assets/img/prop-pearls.webp?v=707885dda2" alt="" width="120" height="97">
             <p>Your bag is empty.</p>
             <a class="btn btn-dark" href="shop.html" ${onShop ? 'data-close' : ''}>Shop the flavours</a>
           </div>
@@ -157,13 +157,18 @@
               <label class="opt" id="pmCodWrap"><input type="radio" name="pmode" value="cod" id="pmCod"><span><b>Pay on delivery</b><small>Cash or UPI at your door</small></span></label>
             </div>
             <div class="paybox" id="pUpi">
+              <div class="qr-card">
+                <img src="assets/img/upi-qr.webp?v=707885dda2" alt="UPI QR code for Deepak Gupta" width="480" height="480">
+                <div><b>Scan to pay with any UPI app</b><small>GPay, PhonePe, Paytm, BHIM</small><span class="qr-tag">Personal QR · Deepak Gupta</span></div>
+              </div>
               <p class="pay-note" id="pNotice"></p>
               <ol class="paysteps">
-                <li>Open any UPI app and pay <b id="pAmt"></b> to:
+                <li>Scan the QR, or pay <b id="pAmt"></b> to this UPI ID:
                   <div class="upi-row"><code id="pUpiId"></code><button class="btn btn-ghost btn-sm" type="button" id="pCopy">Copy</button></div>
                   <small id="pPayee"></small></li>
                 <li>Add <b id="pNote"></b> in the payment note, if your app allows it.</li>
                 <li>Come back here and tap <b>I've paid</b>.</li>
+                <li class="easy-out" id="pEasy">Not in the mood for all this? Totally fair. <button type="button" class="linkish" id="pToCod">Pay on delivery instead</button> and hand us cash or UPI when your makhana arrives.</li>
               </ol>
               <div class="field"><label for="pRef">UPI reference number (optional)</label><input id="pRef" inputmode="numeric" autocomplete="off" placeholder="12-digit UTR, if handy"></div>
             </div>
@@ -367,7 +372,7 @@
     const pay = server || {};
     const upiId = pay.upiId || CONFIG.upiId, payee = pay.payee || CONFIG.payee;
     const allowCod = pay.allowCod !== undefined ? pay.allowCod : CONFIG.allowCod;
-    const notice = pay.paymentNotice || CONFIG.paymentNotice;
+    const notice = CONFIG.paymentNotice || pay.paymentNotice;   // the personal-account note lives on the website
     $('#pItems').innerHTML = lines().map(l => `<li><span>${l.qty} × ${esc(l.f.name)} <small>${CONFIG.sizes[l.size].label}</small></span><span>${rupees(l.qty * l.price)}</span></li>`).join('');
     $('#pSlot').textContent = slotVal();
     $('#pTotal').textContent = rupees(total());
@@ -378,6 +383,7 @@
     $('#pNotice').textContent = notice || '';
     $('#pNotice').hidden = !notice;
     $('#pmCodWrap').hidden = allowCod === false;
+    $('#pEasy').hidden = allowCod === false;
     if (allowCod === false) $('#pmUpi').checked = true;
     syncPayMode();
     showErr($('#pErr'), ''); $('#pWaWrap').hidden = true;
@@ -388,6 +394,10 @@
     $('#pPlace').textContent = cod ? 'Place order, pay on delivery' : "I've paid, place my order";
   }
   $$('input[name="pmode"]').forEach(r => r.addEventListener('change', syncPayMode));
+  $('#pToCod').addEventListener('click', () => {
+    $('#pmCod').checked = true; syncPayMode();
+    const o = $('#pmCodWrap'); if (o && o.scrollIntoView) o.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+  });
   $('#pCopy').addEventListener('click', () => {
     const v = $('#pUpiId').textContent;
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(() => toast('UPI ID copied'), () => toast(v)); else toast(v);
@@ -572,7 +582,7 @@
       {   // the lanes clear the logo and the text as well as the pouches
         const ext = el => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect(); };
         $$('.hero-mark img, .ctas > *', hero).forEach(e => packs.push(e.getBoundingClientRect()));
-        $$(W < 560 ? '.hero-tag' : '.hero-tag, .hero .lead', hero).forEach(e => packs.push(ext(e)));
+        $$(W < 560 ? '.hero-mark' : '.hero .lead', hero).forEach(e => packs.push(ext(e)));
       }
       const left = Math.min(...packs.map(b => b.left)) - hr.left, right = Math.max(...packs.map(b => b.right)) - hr.left;
       boxes = [[edge, left - gap], [right + gap, W - edge]];
